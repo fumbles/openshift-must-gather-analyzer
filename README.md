@@ -71,11 +71,18 @@ If you want a single HTML file, use the `--single-file` subcommand.
 - By default it creates the site folder
 
 ### CLI
-`mga <must-gather-path>`
-`mga $MUST_GATHER_PATH report-site`
-`mga $MUST_GATHER_PATH report-site --single-file`
 
-or `analyze-mg <must-gather> <optional output-path>`
+```bash
+mga <must-gather-path>
+mga $MUST_GATHER_PATH report-site
+mga $MUST_GATHER_PATH report-site --single-file
+```
+
+or:
+
+```bash
+analyze-mg <must-gather> <optional output-path>
+```
 
 ### Installation
 
