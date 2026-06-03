@@ -58,6 +58,13 @@ mkdir -p "$package_dir"
 
 (
   cd "$script_dir/frontend"
+  if [[ ! -x node_modules/.bin/vite ]]; then
+    if [[ -f package-lock.json ]]; then
+      npm ci
+    else
+      npm install
+    fi
+  fi
   npm run build
 )
 

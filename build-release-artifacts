@@ -47,6 +47,20 @@ bump_patch_version() {
   printf '%s.%s.%s\n' "$major" "$minor" "$patch"
 }
 
+build_frontend() {
+  (
+    cd "$script_dir/frontend"
+    if [[ ! -x node_modules/.bin/vite ]]; then
+      if [[ -f package-lock.json ]]; then
+        npm ci
+      else
+        npm install
+      fi
+    fi
+    npm run build
+  )
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --new-version)
@@ -119,10 +133,7 @@ rm -rf "$script_dir/releases"
 mkdir -p "$release_root"
 rm -f "$release_root"/*.tar.gz "$release_root"/SHA256SUMS
 
-(
-  cd "$script_dir/frontend"
-  npm run build
-)
+build_frontend
 
 package_bundle() {
   local target_os="$1"
