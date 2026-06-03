@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: build-dist [output-dir]
+
+Build a distributable bundle for the current platform.
+
+The bundle contains:
+  - <package-name> standalone executable
+  - analyze-mg     helper script that prefers the bundled executable
+  - README.txt     quick usage notes
+
+Examples:
+  ./build-dist
+  ./build-dist dist
+EOF
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ $# -gt 1 ]]; then
+  usage >&2
+  exit 1
+fi
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+output_root="${1:-$script_dir/dist}"
+
+os_name="$(uname -s | tr '[:upper:]' '[:lower:]')"
+arch_name="$(uname -m)"
+version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$script_dir/Cargo.toml" | head -n1)"
+
+if [[ -z "$version" ]]; then
+  echo "build-dist: failed to detect version from Cargo.toml" >&2
+  exit 1
+fi
+
+binary_name="$(sed -n 's/^name = "\(.*\)"/\1/p' "$script_dir/Cargo.toml" | head -n1)"
+
+if [[ -z "$binary_name" ]]; then
+  echo "build-dist: failed to detect package name from Cargo.toml" >&2
+  exit 1
+fi
+
+package_name="${binary_name}-${version}-${os_name}-${arch_name}"
+package_dir="$output_root/$package_name"
+archive_path="$output_root/${package_name}.tar.gz"
+
+mkdir -p "$output_root"
+rm -rf "$package_dir"
+mkdir -p "$package_dir"
+
+(
+  cd "$script_dir/frontend"
+  npm run build
+)
+
+(
+  cd "$script_dir"
+  cargo build --release
+)
+
+cp "$script_dir/target/release/$binary_name" "$package_dir/$binary_name"
+cp "$script_dir/analyze-mg" "$package_dir/analyze-mg"
+chmod +x "$package_dir/$binary_name" "$package_dir/analyze-mg"
+
+cat > "$package_dir/README.txt" <<EOF
+${binary_name} ${version}
+
+This bundle does not require Rust on the target system.
+
+Usage:
+  ./${binary_name} <must-gather-path>
+  ./${binary_name} <must-gather-path> [output-dir]
+
+Helper:
+  ./analyze-mg <must-gather-path> [output-dir]
+
+Examples:
+  ./analyze-mg ./must-gather.local.customer.1234
+  ./${binary_name} ./must-gather.local.customer.1234 report-site
+
+Default site output:
+  must-gather-analyze.<timestamp>/ beside the must-gather directory
+
+If you need a single self-contained HTML file instead:
+  ./${binary_name} --single-file <must-gather-path> output.html
+EOF
+
+tar -C "$output_root" -czf "$archive_path" "$package_name"
+
+echo "Created bundle directory: $package_dir"
+echo "Created archive: $archive_path"

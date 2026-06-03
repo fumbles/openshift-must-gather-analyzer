@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: build-release-artifacts [options]
+
+Build release bundles for:
+  - macOS arm64 (native host build)
+  - Linux x86_64 (static musl build via podman)
+
+Artifacts are written to:
+  releases/<version>/
+
+Options:
+  --new-version         Increment the Cargo.toml patch version before building
+  --version <version>   Update Cargo.toml package version before building
+  --publish             Create/update the GitHub release for v<version> with built artifacts
+  --notes-file <file>   Use a file for GitHub release notes
+  --skip-mac            Skip macOS arm64 build
+  --skip-linux          Skip Linux x86_64 build
+  -h, --help            Show help
+EOF
+}
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+publish=0
+skip_mac=0
+skip_linux=0
+notes_file=""
+requested_version=""
+increment_version=0
+
+bump_patch_version() {
+  local current_version="$1"
+  local major minor patch
+
+  IFS='.' read -r major minor patch <<< "$current_version"
+
+  if [[ ! "$major" =~ ^[0-9]+$ || ! "$minor" =~ ^[0-9]+$ || ! "$patch" =~ ^[0-9]+$ ]]; then
+    echo "build-release-artifacts: --new-version only supports numeric semver versions like 0.0.1" >&2
+    exit 1
+  fi
+
+  patch=$((patch + 1))
+  printf '%s.%s.%s\n' "$major" "$minor" "$patch"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --new-version)
+      increment_version=1
+      shift
+      ;;
+    --version)
+      requested_version="${2:-}"
+      shift 2
+      ;;
+    --publish)
+      publish=1
+      shift
+      ;;
+    --notes-file)
+      notes_file="${2:-}"
+      shift 2
+      ;;
+    --skip-mac)
+      skip_mac=1
+      shift
+      ;;
+    --skip-linux)
+      skip_linux=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$increment_version" -eq 1 && -n "$requested_version" ]]; then
+  echo "build-release-artifacts: use either --new-version or --version, not both" >&2
+  exit 1
+fi
+
+if [[ "$skip_mac" -eq 1 && "$skip_linux" -eq 1 ]]; then
+  echo "build-release-artifacts: nothing to build" >&2
+  exit 1
+fi
+
+current_version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$script_dir/Cargo.toml" | head -n1)"
+
+if [[ "$increment_version" -eq 1 ]]; then
+  requested_version="$(bump_patch_version "$current_version")"
+fi
+
+if [[ -n "$requested_version" ]]; then
+  perl -0pi -e 's/^version = ".*"$/version = "'"$requested_version"'"/m' "$script_dir/Cargo.toml"
+fi
+
+binary_name="$(sed -n 's/^name = "\(.*\)"/\1/p' "$script_dir/Cargo.toml" | head -n1)"
+version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$script_dir/Cargo.toml" | head -n1)"
+
+if [[ -z "$binary_name" || -z "$version" ]]; then
+  echo "build-release-artifacts: failed to detect package name/version from Cargo.toml" >&2
+  exit 1
+fi
+
+release_root="$script_dir/releases/$version"
+dist_root="$script_dir/dist"
+rm -rf "$script_dir/releases"
+mkdir -p "$release_root"
+rm -f "$release_root"/*.tar.gz "$release_root"/SHA256SUMS
+
+(
+  cd "$script_dir/frontend"
+  npm run build
+)
+
+package_bundle() {
+  local target_os="$1"
+  local target_arch="$2"
+  local source_binary="$3"
+  local package_name="${binary_name}-${version}-${target_os}-${target_arch}"
+  local package_dir="$release_root/$package_name"
+  local archive_path="$release_root/${package_name}.tar.gz"
+
+  rm -rf "$package_dir"
+  mkdir -p "$package_dir"
+
+  cp "$source_binary" "$package_dir/$binary_name"
+  cp "$script_dir/analyze-mg" "$package_dir/analyze-mg"
+  chmod +x "$package_dir/$binary_name" "$package_dir/analyze-mg"
+
+  cat > "$package_dir/README.txt" <<EOF
+${binary_name} ${version}
+
+Bundle contents:
+  - ${binary_name}
+  - analyze-mg
+
+Usage:
+  ./analyze-mg <must-gather-path> [output-dir]
+
+Or directly:
+  ./${binary_name} <must-gather-path>
+  ./${binary_name} <must-gather-path> [output-dir]
+
+Default site output:
+  must-gather-analyze.<timestamp>/
+
+If you need a single self-contained HTML file instead:
+  ./${binary_name} --single-file <must-gather-path> output.html
+EOF
+
+  tar -C "$release_root" -czf "$archive_path" "$package_name"
+}
+
+cleanup_dist() {
+  if [[ ! -d "$dist_root" ]]; then
+    return
+  fi
+
+  find "$dist_root" -mindepth 1 -maxdepth 1 \
+    \( -type d -o -type f \) \
+    \( -name "${binary_name}-*" -o -name "${binary_name}-*.tar.gz" \) \
+    -exec rm -rf {} +
+
+  if [[ -z "$(find "$dist_root" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+    rmdir "$dist_root" 2>/dev/null || true
+  fi
+}
+
+if [[ "$skip_mac" -eq 0 ]]; then
+  (
+    cd "$script_dir"
+    cargo build --release
+  )
+  package_bundle "darwin" "arm64" "$script_dir/target/release/$binary_name"
+fi
+
+if [[ "$skip_linux" -eq 0 ]]; then
+  if ! command -v podman >/dev/null 2>&1; then
+    echo "build-release-artifacts: podman is required for the linux-x86_64 build" >&2
+    exit 1
+  fi
+
+  (
+    cd "$script_dir"
+    podman run --rm --platform linux/amd64 \
+      -e CAMGI_SKIP_FRONTEND_BUILD=1 \
+      -v "$script_dir:/workspace" \
+      -w /workspace \
+      docker.io/clux/muslrust:stable \
+      cargo build --release --target x86_64-unknown-linux-musl
+  )
+  package_bundle "linux" "x86_64" "$script_dir/target/x86_64-unknown-linux-musl/release/$binary_name"
+fi
+
+(
+  cd "$release_root"
+  shasum -a 256 *.tar.gz > SHA256SUMS
+)
+
+if [[ "$publish" -eq 1 ]]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "build-release-artifacts: gh CLI is required for --publish" >&2
+    exit 1
+  fi
+
+  release_tag="v${version}"
+  gh_args=(
+    release
+    create
+    "$release_tag"
+    "$release_root"/*.tar.gz
+    "$release_root"/SHA256SUMS
+    --title "$release_tag"
+  )
+
+  if [[ -n "$notes_file" ]]; then
+    gh_args+=(--notes-file "$notes_file")
+  else
+    gh_args+=(--generate-notes)
+  fi
+
+  (
+    cd "$script_dir"
+    gh "${gh_args[@]}"
+  )
+fi
+
+cleanup_dist
+
+echo "Release artifacts created in: $release_root"

@@ -1,0 +1,16 @@
+/target
+.cargo
+# Frontend
+frontend/node_modules/
+frontend/dist/
+must-gather*
+output.html
+output-script-test
+sync-public-repo.sh
+.DS_Store
+dist/
+releases/
+mg-*.html
+omc_health_report*.html
+dependency-check.html
+notes.txt
