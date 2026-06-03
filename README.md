@@ -24,11 +24,11 @@ Note: I may work for IBM, but do not represent them. This is my personal project
 
 ## Screenshots
 
-<img width="1727" alt="image" src="https://github.ibm.com/user-attachments/assets/6161ccec-c9ab-4207-935f-fb67ba13f939" />
+![Must-Gather Explorer overview](screenshots/image1.png)
 
 ----
 
-<img width="1721" alt="image" src="https://github.ibm.com/user-attachments/assets/690136f9-a799-402b-ab6e-117386d07f0c" />
+![Must-Gather Explorer resource details](screenshots/image2.png)
 
 
 ## Features
