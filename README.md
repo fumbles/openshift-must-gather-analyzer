@@ -1,6 +1,35 @@
-# OpenShift Must-Gather Analyzer
+# must-gather-analyzer
 
-A modern tool for examining [OKD/OpenShift must-gather][mustgather] records with advanced analysis capabilities, interactive UI, and automated health checks.
+A tool for examining [OKD/OpenShift must-gather][mustgather] records with advanced analysis capabilities, interactive UI, and automated health checks.
+
+
+## AI Info
+
+A fork of this is available on [fumbles/openshift-must-gather-analyzer](https://github.com/fumbles/openshift-must-gather-analyzer) for public consumption/contribution.
+
+
+This project was built with AI-assisted development. IBM Bob was used as a coding collaborator to help explore the must-gather structure, build the UI, and iterate on resource analysis workflows.
+
+- I used [elmiko/](https://github.com/elmiko/okd-camgi) / https://github.com/elmiko/camgi.rs as a scaffold.
+
+While, I understand, the general consensus, is to not output AI 'slop', I think it's important to acknowledge the role of AI in this project and use it to enhance or enable tools we can potentially use.
+
+i.e. We have a lack of a visual must-gather analyzer, and we can use AI to help us create one.
+Also, here's a shoutout to [omc](https://github.com/gmeghnag/omc) for some verification and navigation of must-gather files to verify we have the data we need.
+
+I use this internally, at IBM (with some modifications for our environment,) but wanted to put it in the public domain for others to use and contribute to.
+
+Note: I may work for IBM, but do not represent them. This is my personal project, and I am not speaking on behalf of IBM. This is licensed under the GNU General Public License v3.0 license.
+
+
+## Screenshots
+
+<img width="1727" alt="image" src="https://github.ibm.com/user-attachments/assets/6161ccec-c9ab-4207-935f-fb67ba13f939" />
+
+----
+
+<img width="1721" alt="image" src="https://github.ibm.com/user-attachments/assets/690136f9-a799-402b-ab6e-117386d07f0c" />
+
 
 ## Features
 
