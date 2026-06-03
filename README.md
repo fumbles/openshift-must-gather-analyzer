@@ -62,6 +62,18 @@ Note: I may work for IBM, but do not represent them. This is my personal project
 
 ## Quickstart
 
+### Usage
+
+You can use the provided excutables vs installing cargo and building from source. If you want a single HTML file, use the `--single-file` subcommand.
+- By default it creates the site folder
+They are located in the releases folder for both Linux and MacOS.
+### CLI
+`mga <must-gather-path>`
+`mga $MUST_GATHER_PATH report-site`
+`mga $MUST_GATHER_PATH report-site --single-file`
+
+or `analyze-mg <must-gather> <optional output-path>`
+
 ### Installation
 
 ```bash
