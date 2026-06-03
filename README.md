@@ -64,9 +64,12 @@ Note: I may work for IBM, but do not represent them. This is my personal project
 
 ### Usage
 
-You can use the provided excutables vs installing cargo and building from source. If you want a single HTML file, use the `--single-file` subcommand.
-- By default it creates the site folder
+You can use the provided excutables vs installing cargo and building from source.
 They are located in the releases folder for both Linux and MacOS.
+
+If you want a single HTML file, use the `--single-file` subcommand.
+- By default it creates the site folder
+
 ### CLI
 `mga <must-gather-path>`
 `mga $MUST_GATHER_PATH report-site`
