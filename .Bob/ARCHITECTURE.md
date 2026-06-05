@@ -76,6 +76,8 @@ Single-file mode embeds CSS, JavaScript, and all data into one HTML file. Site m
 
 Each file under `src/resources/` models one Kubernetes/OpenShift resource kind. Use `GenericResource` for broad resources where custom parsing is not yet worth it, such as Administration entries.
 
+`MustGather` keeps OpenShift `ClusterOperator` resources separate from OLM `Operator` resources. `clusteroperators` comes from `config.openshift.io/clusteroperators`; `operators` comes from `operators.coreos.com/operators` and is rendered as Home -> Operators.
+
 ### Analyzer Layer
 
 `src/analyzers/` defines:

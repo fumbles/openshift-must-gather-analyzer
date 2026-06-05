@@ -114,6 +114,7 @@ pub struct MustGather {
     pub version: String,
     pub platformtype: String,
     pub clusteroperators: Vec<ClusterOperator>,
+    pub operators: Vec<GenericResource>,
     pub clusterroles: Vec<ClusterRole>,
     pub clusterrolebindings: Vec<ClusterRoleBinding>,
     pub securitycontextconstraints: Vec<SecurityContextConstraint>,
@@ -193,6 +194,8 @@ impl MustGather {
         let manifestpath =
             build_manifest_path(&path, "", "", "clusteroperators", "config.openshift.io");
         let clusteroperators = get_resources::<ClusterOperator>(&manifestpath);
+
+        let operators = get_cluster_resources(&path, "operators.coreos.com", "operators");
 
         let manifestpath =
             build_manifest_path(&path, "", "", "clusterroles", "rbac.authorization.k8s.io");
@@ -343,8 +346,7 @@ impl MustGather {
         let cluster_settings = get_cluster_settings(&path);
         let resourcequotas = get_namespaced_core_resources(&path, "resourcequotas");
         let limitranges = get_namespaced_core_resources(&path, "limitranges");
-        let customresourcedefinitions =
-            get_cluster_resources(&path, "apiextensions.k8s.io", "customresourcedefinitions");
+        let customresourcedefinitions = get_custom_resource_definitions(&path);
         let dynamicplugins = get_cluster_resources(&path, "console.openshift.io", "consoleplugins");
         let events = get_events(&path);
 
@@ -389,6 +391,7 @@ impl MustGather {
             version,
             platformtype,
             clusteroperators,
+            operators,
             clusterroles,
             clusterrolebindings,
             securitycontextconstraints,
@@ -809,6 +812,107 @@ fn get_cluster_resources(path: &Path, api_group: &str, resource: &str) -> Vec<Ge
     resources
 }
 
+fn get_custom_resource_definitions(path: &Path) -> Vec<GenericResource> {
+    let mut crds = get_cluster_resources(path, "apiextensions.k8s.io", "customresourcedefinitions");
+    add_custom_resource_instance_relationships(path, &mut crds);
+    crds
+}
+
+fn add_custom_resource_instance_relationships(path: &Path, crds: &mut [GenericResource]) {
+    for crd in crds {
+        let Some(group) = crd.crd_group().map(str::to_string) else {
+            continue;
+        };
+        let Some(plural) = crd.crd_plural().map(str::to_string) else {
+            continue;
+        };
+        let kind = crd.crd_kind().unwrap_or(ResourceV2::kind(crd)).to_string();
+        let scope = crd.crd_scope().unwrap_or("");
+
+        let mut relationships = Vec::new();
+        let mut seen = HashSet::new();
+
+        if scope != "Namespaced" {
+            let resource_dir = path
+                .join("cluster-scoped-resources")
+                .join(&group)
+                .join(&plural);
+            collect_custom_resource_instance_links(
+                &resource_dir,
+                &kind,
+                None,
+                &mut relationships,
+                &mut seen,
+            );
+        }
+
+        if scope != "Cluster" {
+            let namespaces_path = path.join("namespaces");
+            if let Ok(namespace_dirs) = fs::read_dir(&namespaces_path) {
+                for namespace_entry in namespace_dirs.flatten() {
+                    let namespace_path = namespace_entry.path();
+                    if !namespace_path.is_dir() {
+                        continue;
+                    }
+                    let namespace = namespace_entry.file_name().to_string_lossy().to_string();
+                    let resource_dir = namespace_path.join(&group).join(&plural);
+                    collect_custom_resource_instance_links(
+                        &resource_dir,
+                        &kind,
+                        Some(namespace),
+                        &mut relationships,
+                        &mut seen,
+                    );
+                }
+            }
+        }
+
+        crd.add_relationships(relationships);
+    }
+}
+
+fn collect_custom_resource_instance_links(
+    resource_dir: &Path,
+    default_kind: &str,
+    fallback_namespace: Option<String>,
+    links: &mut Vec<ResourceLink>,
+    seen: &mut HashSet<(String, String, Option<String>)>,
+) {
+    let Ok(entries) = fs::read_dir(resource_dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("yaml") {
+            continue;
+        }
+
+        let Ok(manifest) = Manifest::from(path) else {
+            continue;
+        };
+        let name = manifest.name.clone();
+        if name.is_empty() || name == "Unknown" {
+            continue;
+        }
+
+        let kind = manifest.as_yaml()["kind"]
+            .as_str()
+            .unwrap_or(default_kind)
+            .to_string();
+        let namespace = manifest.namespace().or_else(|| fallback_namespace.clone());
+        let key = (kind.clone(), name.clone(), namespace.clone());
+        if seen.insert(key) {
+            links.push(ResourceLink {
+                kind,
+                name,
+                namespace,
+                relationship: RelationshipType::References,
+            });
+        }
+    }
+}
+
 fn get_namespaced_core_resources(path: &Path, resource: &str) -> Vec<GenericResource> {
     let mut resources = Vec::new();
     let namespaces_path = path.join("namespaces");
@@ -1216,6 +1320,104 @@ metadata:
         assert_eq!(Resource::name(&resources[0]), "test-quota");
         assert_eq!(ResourceV2::kind(&resources[0]), "ResourceQuota");
         assert_eq!(ResourceV2::namespace(&resources[0]), Some("test-ns"));
+    }
+
+    #[test]
+    fn test_get_cluster_resources_loads_olm_operators() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mga-operator-resource-test-{}", unique));
+        let manifest_dir = root
+            .join("cluster-scoped-resources")
+            .join("operators.coreos.com")
+            .join("operators");
+        fs::create_dir_all(&manifest_dir).unwrap();
+        fs::write(
+            manifest_dir.join("isf-operator.ibm-spectrum-fusion-ns.yaml"),
+            r#"apiVersion: operators.coreos.com/v1
+kind: Operator
+metadata:
+  name: isf-operator.ibm-spectrum-fusion-ns
+"#,
+        )
+        .unwrap();
+
+        let resources = get_cluster_resources(&root, "operators.coreos.com", "operators");
+
+        assert_eq!(resources.len(), 1);
+        assert_eq!(
+            Resource::name(&resources[0]),
+            "isf-operator.ibm-spectrum-fusion-ns"
+        );
+        assert_eq!(ResourceV2::kind(&resources[0]), "Operator");
+    }
+
+    #[test]
+    fn test_get_custom_resource_definitions_links_custom_resource_instances() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("mga-crd-instance-test-{}", unique));
+        let crd_dir = root
+            .join("cluster-scoped-resources")
+            .join("apiextensions.k8s.io")
+            .join("customresourcedefinitions");
+        let volume_dir = root
+            .join("namespaces")
+            .join("longhorn-system")
+            .join("longhorn.io")
+            .join("volumes");
+        fs::create_dir_all(&crd_dir).unwrap();
+        fs::create_dir_all(&volume_dir).unwrap();
+        fs::write(
+            crd_dir.join("volumes.longhorn.io.yaml"),
+            r#"apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: volumes.longhorn.io
+spec:
+  group: longhorn.io
+  names:
+    kind: Volume
+    plural: volumes
+  scope: Namespaced
+"#,
+        )
+        .unwrap();
+        fs::write(
+            volume_dir.join("pvc-98204ab1-e4c2-4d6f-8de1-f389ecd91a14.yaml"),
+            r#"apiVersion: longhorn.io/v1beta2
+kind: Volume
+metadata:
+  name: pvc-98204ab1-e4c2-4d6f-8de1-f389ecd91a14
+  namespace: longhorn-system
+status:
+  state: attached
+"#,
+        )
+        .unwrap();
+
+        let resources = get_custom_resource_definitions(&root);
+        let crd = resources
+            .iter()
+            .find(|resource| Resource::name(*resource) == "volumes.longhorn.io")
+            .unwrap();
+        let relationships = crd.relationships();
+
+        assert_eq!(relationships.len(), 1);
+        assert_eq!(relationships[0].kind, "Volume");
+        assert_eq!(
+            relationships[0].name,
+            "pvc-98204ab1-e4c2-4d6f-8de1-f389ecd91a14"
+        );
+        assert_eq!(
+            relationships[0].namespace.as_deref(),
+            Some("longhorn-system")
+        );
+        assert_eq!(relationships[0].relationship, RelationshipType::References);
     }
 
     #[test]

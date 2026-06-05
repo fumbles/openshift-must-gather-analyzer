@@ -78,6 +78,7 @@ Important functions in `src/mustgather.rs`:
 - `get_pods`: reads pod manifests and container current logs.
 - `get_namespaces`: supports current and legacy namespace manifest locations.
 - `get_cluster_settings`: gathers config.openshift.io resources except cluster operators.
+- `get_cluster_resources`: gathers broad cluster-scoped resources, including OLM Operators from `cluster-scoped-resources/operators.coreos.com/operators`.
 - `get_namespaced_core_resources`: gathers administration resources such as ResourceQuotas and LimitRanges.
 
 `get_resources<T>` must ignore non-YAML files. Some directories contain README-like files or other artifacts.
@@ -108,6 +109,22 @@ Administration data includes:
 Most are loaded as `GenericResource`. This is deliberate: the UI primarily needs YAML, status, key metadata, and compact cards.
 
 CRDs should stay compact in the left column. Do not make CRD cards large unless they have errors or warnings.
+
+CRDs are enriched with related custom resource instances when the must-gather includes matching resource directories. The linker uses `spec.group`, `spec.names.plural`, `spec.names.kind`, and `spec.scope` from the CRD, then scans:
+
+- `cluster-scoped-resources/<group>/<plural>/*.yaml` for cluster-scoped instances.
+- `namespaces/<namespace>/<group>/<plural>/*.yaml` for namespaced instances.
+
+Those instances appear in the CRD Related tab as references. CRDs always expose the Related tab in the UI; if a must-gather only includes the CRD definitions and not the custom resource instances, the tab shows an empty state with the exact paths the analyzer checked.
+
+## Operators vs ClusterOperators
+
+These are different resource families:
+
+- `ClusterOperator` resources come from `config.openshift.io/clusteroperators` and drive Home -> Cluster Health and Home -> Cluster Operators.
+- OLM `Operator` resources come from `operators.coreos.com/operators` and drive Home -> Operators.
+
+Keep these separate in naming and navigation. ClusterOperators answer control-plane health questions; Operators show installed OLM operator resources similar to `oc get operator`.
 
 ## Security Resources
 

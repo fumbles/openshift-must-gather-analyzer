@@ -52,11 +52,13 @@ Note: I may work for IBM, but do not represent them. This is my personal project
 - Nodes (with readiness and pressure conditions)
 - Pods (with container status and logs)
 - ClusterOperators (with degraded/progressing/available status)
+- OLM Operators (`operators.coreos.com/operators`) under Home → Operators
 - Machines (with provisioning state)
 - MachineSets (with replica counts)
 - MachineConfigPools (with update status)
 - ClusterAutoscaler & MachineAutoscaler
 - CertificateSigningRequests
+- CustomResourceDefinitions, with a Related tab for captured custom resource instances and a clear empty state when the must-gather only includes the CRD definition
 - OpenShift Virtualization artifacts under Platform → Virtualization, including HyperConverged, KubeVirt, VM, VMI, snapshot, CDI, instance type, and preference resources when present
 - And more...
 

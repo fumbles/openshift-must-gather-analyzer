@@ -108,6 +108,7 @@ pub struct DashboardData {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClusterHealthData {
     pub operators: Vec<ResourceData>,
+    pub installed_operators: ResourceCollection,
     pub degraded_count: usize,
     pub unavailable_count: usize,
 }
@@ -656,6 +657,9 @@ fn serialize_resources<T: Resource + ResourceV2>(
                         "timestamp",
                         "reporting_component",
                     ][..],
+                    "CustomResourceDefinition" => {
+                        &["crd_group", "crd_plural", "crd_kind", "crd_scope"][..]
+                    }
                     _ => &[][..],
                 };
 
@@ -816,8 +820,20 @@ impl TriageMustGatherData {
         };
 
         // Cluster health
+        let mut installed_operators_counts = HashMap::new();
+        let installed_operators_errors = count_error_resources(&mg.operators);
+        installed_operators_counts.insert("error_count".to_string(), installed_operators_errors);
+        installed_operators_counts.insert(
+            "warning_count".to_string(),
+            count_unhealthy_resources(&mg.operators).saturating_sub(installed_operators_errors),
+        );
+
         let cluster_health = ClusterHealthData {
             operators: serialize_resources(&mg.clusteroperators, &analyzer_registry, summary_only),
+            installed_operators: ResourceCollection {
+                items: serialize_resources(&mg.operators, &analyzer_registry, summary_only),
+                counts: installed_operators_counts,
+            },
             degraded_count: degraded_operators,
             unavailable_count: count_unavailable_operators(&mg.clusteroperators),
         };
@@ -1485,6 +1501,10 @@ fn write_site_details(output_dir: &Path, data: &TriageMustGatherData) -> Result<
     fs::create_dir_all(&logs_dir)?;
 
     write_resource_details(&resources_dir, &data.overview.cluster_health.operators)?;
+    write_resource_collection_details(
+        &resources_dir,
+        &data.overview.cluster_health.installed_operators,
+    )?;
     write_resource_collection_details(&resources_dir, &data.core.nodes)?;
     write_resource_collection_details(&resources_dir, &data.core.namespaces)?;
     write_resource_collection_details(&resources_dir, &data.core.events)?;
@@ -1591,6 +1611,7 @@ fn write_site_details(output_dir: &Path, data: &TriageMustGatherData) -> Result<
     write_resource_collection_details(&resources_dir, &data.platform.virtualization.preferences)?;
 
     write_resource_raw(&raw_dir, &data.overview.cluster_health.operators)?;
+    write_resource_collection_raw(&raw_dir, &data.overview.cluster_health.installed_operators)?;
     write_resource_collection_raw(&raw_dir, &data.core.nodes)?;
     write_resource_collection_raw(&raw_dir, &data.core.namespaces)?;
     write_resource_collection_raw(&raw_dir, &data.core.events)?;

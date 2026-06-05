@@ -59,6 +59,146 @@ function getEventObjectLabel(resource) {
   return resource?.name || 'Unknown object'
 }
 
+function groupRelationshipsByKind(relationships = []) {
+  const groups = new Map()
+
+  relationships.forEach((relationship) => {
+    if (!relationship?.kind || !relationship?.name) return
+    const key = relationship.kind
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(relationship)
+  })
+
+  return Array.from(groups.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([kind, items]) => ({
+      kind,
+      items: items.sort((left, right) => {
+        const leftNamespace = left.namespace || ''
+        const rightNamespace = right.namespace || ''
+        return leftNamespace.localeCompare(rightNamespace) || left.name.localeCompare(right.name)
+      }),
+    }))
+}
+
+function formatRelationshipGroupTitle(kind, count) {
+  const plural = count === 1
+    ? kind
+    : kind.endsWith('s')
+      ? kind
+      : `${kind}s`
+  return `${plural} (${count})`
+}
+
+function getCrdLookupParts(resource) {
+  const fields = resource?.key_fields || {}
+  let group = fields.crd_group || ''
+  let plural = fields.crd_plural || ''
+  const scope = fields.crd_scope || 'Unknown'
+
+  if ((!group || !plural) && resource?.name?.includes('.')) {
+    const [namePlural, ...groupParts] = resource.name.split('.')
+    plural = plural || namePlural
+    group = group || groupParts.join('.')
+  }
+
+  return {
+    group: group || '<group>',
+    plural: plural || '<plural>',
+    scope,
+  }
+}
+
+function RelatedResourcesPanel({ relationships = [], resource = null }) {
+  const groups = groupRelationshipsByKind(relationships)
+  const total = relationships.length
+  const isCustomResourceDefinition = resource?.kind === 'CustomResourceDefinition'
+
+  if (!total) {
+    if (isCustomResourceDefinition) {
+      const { group, plural, scope } = getCrdLookupParts(resource)
+      const paths = [
+        ...(scope !== 'Namespaced' ? [`cluster-scoped-resources/${group}/${plural}/*.yaml`] : []),
+        ...(scope !== 'Cluster' ? [`namespaces/<namespace>/${group}/${plural}/*.yaml`] : []),
+      ]
+
+      return (
+        <Card>
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-slate-400">
+            Related Resources (0)
+          </h3>
+          <div className="space-y-3 text-sm text-slate-400">
+            <p>
+              No custom resource instances were captured for this CRD.
+            </p>
+            <p>
+              The analyzer checks these must-gather paths:
+            </p>
+            <div className="space-y-2">
+              {paths.map((path) => (
+                <code
+                  key={path}
+                  className="block rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2 text-xs text-slate-300 [overflow-wrap:anywhere]"
+                >
+                  {path}
+                </code>
+              ))}
+            </div>
+            <p>
+              If those object YAML files are absent, only the CRD definition can be shown here.
+            </p>
+          </div>
+        </Card>
+      )
+    }
+
+    return (
+      <Card>
+        <p className="text-slate-400">No related resources reported.</p>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
+        Related Resources ({total})
+      </h3>
+      <div className="space-y-5">
+        {groups.map((group) => (
+          <div key={group.kind} className="space-y-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              {formatRelationshipGroupTitle(group.kind, group.items.length)}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {group.items.map((relationship) => {
+                const key = `${relationship.kind}-${relationship.namespace || ''}-${relationship.name}-${relationship.relationship}`
+                return (
+                  <div
+                    key={key}
+                    className="inline-flex max-w-full min-w-0 flex-wrap items-center gap-2 rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-sm text-violet-100"
+                  >
+                    <span className="min-w-0 font-semibold [overflow-wrap:anywhere]">{relationship.name}</span>
+                    <span className="text-xs text-slate-400">{relationship.kind}</span>
+                    {relationship.namespace && (
+                      <span className="rounded-md border border-slate-700 bg-slate-900/60 px-2 py-0.5 text-xs text-slate-300">
+                        {relationship.namespace}
+                      </span>
+                    )}
+                    <span className="rounded-md border border-slate-700 bg-slate-900/60 px-2 py-0.5 text-xs text-slate-400">
+                      {relationship.relationship}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 function getEventTypeLabel(resource) {
   const explicitType = getEventField(resource, 'type')
   if (explicitType) return explicitType
@@ -348,8 +488,13 @@ function ResourceDetailsPanel({ resource }) {
     : displayResource.name
   const [activeTab, setActiveTab] = useState(0)
   const metadataEntries = Object.entries(displayResource.metadata || {})
+  const relationships = displayResource.relationships || []
+  const hasRelationships = relationships.length > 0
+  const isCustomResourceDefinition = displayResource.kind === 'CustomResourceDefinition'
+  const showRelatedTab = hasRelationships || isCustomResourceDefinition
   const tabLabels = [
     'YAML',
+    ...(showRelatedTab ? [`Related (${relationships.length})`] : []),
     'Analysis',
     `Errors (${displayResource.errors?.length || 0})`,
     `Warnings (${displayResource.warnings?.length || 0})`,
@@ -399,6 +544,10 @@ function ResourceDetailsPanel({ resource }) {
         <YAMLViewer content={raw || '# No YAML available'} />
       ),
     },
+    ...(showRelatedTab ? [{
+      label: `Related (${relationships.length})`,
+      content: <RelatedResourcesPanel relationships={relationships} resource={displayResource} />,
+    }] : []),
     {
       label: 'Analysis',
       content: displayResource.health_analysis ? (
@@ -719,15 +868,22 @@ function Compute({ title, resources = [], emptyMessage = 'No compute resources f
   )
 }
 
-function ClusterOperators({ data, onShowHelp = null, theme = 'dark' }) {
+function ClusterOperators({ data }) {
   return (
-    <Workloads
-      data={data}
-      defaultTab="operators"
-      visibleTabs={['operators']}
+    <ResourceSplitView
       title="Cluster Operators"
-      onShowHelp={onShowHelp}
-      theme={theme}
+      resources={data?.overview?.cluster_health?.operators || []}
+      emptyMessage="No cluster operators found"
+    />
+  )
+}
+
+function Operators({ data }) {
+  return (
+    <ResourceSplitView
+      title="Operators"
+      resources={data?.overview?.cluster_health?.installed_operators?.items || []}
+      emptyMessage="No operators found"
     />
   )
 }
@@ -900,6 +1056,7 @@ function App({ data }) {
   const fullHeightSection =
     activeSection === 'cluster-health' ||
     activeSection === 'cluster-operators' ||
+    activeSection === 'operators' ||
     activeSection === 'nodes' ||
     activeSection === 'namespaces' ||
     activeSection.startsWith('compute-') ||
@@ -958,7 +1115,9 @@ function App({ data }) {
       case 'cluster-health':
         return <ClusterHealth data={data} />
       case 'cluster-operators':
-        return <ClusterOperators data={data} onShowHelp={() => setShowHelp(true)} theme={theme} />
+        return <ClusterOperators data={data} />
+      case 'operators':
+        return <Operators data={data} />
       case 'nodes':
         return <Nodes data={data} />
       case 'compute-machines':

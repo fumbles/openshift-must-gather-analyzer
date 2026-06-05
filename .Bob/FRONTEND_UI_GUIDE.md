@@ -48,6 +48,7 @@ Routes that need internal scroll panes must be included in `fullHeightSection`. 
 Current full-height families include:
 
 - Cluster Health
+- Operators
 - Nodes
 - Namespaces
 - Compute children
@@ -87,6 +88,7 @@ File: `frontend/src/App.jsx`
 Used for:
 
 - Cluster Health
+- Operators
 - Nodes
 - Namespaces
 - Compute child sections
@@ -94,10 +96,13 @@ Used for:
 - Administration child sections
 - Platform -> Virtualization
 
+Home -> Operators is backed by OLM `operators.operators.coreos.com`, not OpenShift `ClusterOperator`.
+
 Important layout rules:
 
 - Root must be `h-full min-h-0 overflow-hidden`.
 - Grid must have a bounded height and `min-h-0`.
+- The generic details panel in `App.jsx` renders a Related tab whenever `resource.relationships` is non-empty. This is used by both Home -> Cluster Operators and Home -> Operators.
 - Left and right panes must be `pane-scrollbar` scroll containers.
 - Security and Administration are sensitive to this because their lists can be long and their detail YAML can be very tall.
 

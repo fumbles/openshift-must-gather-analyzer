@@ -162,6 +162,13 @@ export function Sidebar({ data, activeSection, onSectionClick, filters, onFilter
         { id: 'dashboard', title: 'Overview', badge: null },
         { id: 'cluster-health', title: 'Cluster Health', badge: data?.overview?.cluster_health?.degraded_count || 0 },
         { id: 'cluster-operators', title: 'Cluster Operators', badge: data?.overview?.cluster_health?.degraded_count || 0 },
+        {
+          id: 'operators',
+          title: 'Operators',
+          badge:
+            (data?.overview?.cluster_health?.installed_operators?.error_count || 0) +
+            (data?.overview?.cluster_health?.installed_operators?.warning_count || 0),
+        },
       ]
     },
     {
