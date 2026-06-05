@@ -9,7 +9,7 @@ output-script-test
 sync-public-repo.sh
 .DS_Store
 dist/
-releases/
+#releases/
 mg-*.html
 omc_health_report*.html
 dependency-check.html
