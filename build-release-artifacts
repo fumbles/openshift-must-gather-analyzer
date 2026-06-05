@@ -15,8 +15,8 @@ Artifacts are written to:
 
 Options:
   --new-version         Increment the Cargo.toml patch version before building
-  --version <version>   Update Cargo.toml package version before building
-  --publish             Create/update the GitHub release for v<version> with built artifacts
+  --version <version>   Update Cargo.toml package version before building, or select an existing version with --publish
+  --publish             Publish existing artifacts for v<version>; skips all builds
   --notes-file <file>   Use a file for GitHub release notes
   --skip-mac            Skip macOS arm64 build
   --skip-linux          Skip Linux x86_64 build
@@ -104,7 +104,12 @@ if [[ "$increment_version" -eq 1 && -n "$requested_version" ]]; then
   exit 1
 fi
 
-if [[ "$skip_mac" -eq 1 && "$skip_linux" -eq 1 ]]; then
+if [[ "$publish" -eq 1 && "$increment_version" -eq 1 ]]; then
+  echo "build-release-artifacts: --new-version cannot be used with --publish because --publish does not build artifacts" >&2
+  exit 1
+fi
+
+if [[ "$publish" -eq 0 && "$skip_mac" -eq 1 && "$skip_linux" -eq 1 ]]; then
   echo "build-release-artifacts: nothing to build" >&2
   exit 1
 fi
@@ -115,12 +120,12 @@ if [[ "$increment_version" -eq 1 ]]; then
   requested_version="$(bump_patch_version "$current_version")"
 fi
 
-if [[ -n "$requested_version" ]]; then
+if [[ "$publish" -eq 0 && -n "$requested_version" ]]; then
   perl -0pi -e 's/^version = ".*"$/version = "'"$requested_version"'"/m' "$script_dir/Cargo.toml"
 fi
 
 binary_name="$(sed -n 's/^name = "\(.*\)"/\1/p' "$script_dir/Cargo.toml" | head -n1)"
-version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$script_dir/Cargo.toml" | head -n1)"
+version="${requested_version:-$(sed -n 's/^version = "\(.*\)"/\1/p' "$script_dir/Cargo.toml" | head -n1)}"
 
 if [[ -z "$binary_name" || -z "$version" ]]; then
   echo "build-release-artifacts: failed to detect package name/version from Cargo.toml" >&2
@@ -129,11 +134,14 @@ fi
 
 release_root="$script_dir/releases/$version"
 dist_root="$script_dir/dist"
-rm -rf "$script_dir/releases"
-mkdir -p "$release_root"
-rm -f "$release_root"/*.tar.gz "$release_root"/SHA256SUMS
 
-build_frontend
+if [[ "$publish" -eq 0 ]]; then
+  rm -rf "$script_dir/releases"
+  mkdir -p "$release_root"
+  rm -f "$release_root"/*.tar.gz "$release_root"/SHA256SUMS
+
+  build_frontend
+fi
 
 package_bundle() {
   local target_os="$1"
@@ -189,7 +197,7 @@ cleanup_dist() {
   fi
 }
 
-if [[ "$skip_mac" -eq 0 ]]; then
+if [[ "$publish" -eq 0 && "$skip_mac" -eq 0 ]]; then
   (
     cd "$script_dir"
     cargo build --release
@@ -197,7 +205,7 @@ if [[ "$skip_mac" -eq 0 ]]; then
   package_bundle "darwin" "arm64" "$script_dir/target/release/$binary_name"
 fi
 
-if [[ "$skip_linux" -eq 0 ]]; then
+if [[ "$publish" -eq 0 && "$skip_linux" -eq 0 ]]; then
   if ! command -v podman >/dev/null 2>&1; then
     echo "build-release-artifacts: podman is required for the linux-x86_64 build" >&2
     exit 1
@@ -215,12 +223,29 @@ if [[ "$skip_linux" -eq 0 ]]; then
   package_bundle "linux" "x86_64" "$script_dir/target/x86_64-unknown-linux-musl/release/$binary_name"
 fi
 
-(
-  cd "$release_root"
-  shasum -a 256 *.tar.gz > SHA256SUMS
-)
+if [[ "$publish" -eq 0 ]]; then
+  (
+    cd "$release_root"
+    shasum -a 256 *.tar.gz > SHA256SUMS
+  )
+fi
 
 if [[ "$publish" -eq 1 ]]; then
+  if [[ ! -d "$release_root" ]]; then
+    echo "build-release-artifacts: missing release directory $release_root; run ./build-release-artifacts first" >&2
+    exit 1
+  fi
+  shopt -s nullglob
+  release_archives=("$release_root"/*.tar.gz)
+  shopt -u nullglob
+  if [[ "${#release_archives[@]}" -eq 0 ]]; then
+    echo "build-release-artifacts: no tar.gz artifacts found in $release_root; run ./build-release-artifacts first" >&2
+    exit 1
+  fi
+  if [[ ! -f "$release_root/SHA256SUMS" ]]; then
+    echo "build-release-artifacts: missing $release_root/SHA256SUMS; run ./build-release-artifacts first" >&2
+    exit 1
+  fi
   if ! command -v gh >/dev/null 2>&1; then
     echo "build-release-artifacts: gh CLI is required for --publish" >&2
     exit 1
@@ -231,7 +256,7 @@ if [[ "$publish" -eq 1 ]]; then
     release
     create
     "$release_tag"
-    "$release_root"/*.tar.gz
+    "${release_archives[@]}"
     "$release_root"/SHA256SUMS
     --title "$release_tag"
   )
@@ -250,4 +275,8 @@ fi
 
 cleanup_dist
 
-echo "Release artifacts created in: $release_root"
+if [[ "$publish" -eq 1 ]]; then
+  echo "Release published from: $release_root"
+else
+  echo "Release artifacts created in: $release_root"
+fi

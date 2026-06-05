@@ -7,12 +7,14 @@ To create a release do the following:
 1. update `Cargo.toml` version if needed
 2. run `./build-release-artifacts`
 3. review the generated artifacts in `releases/<version>/`
-4. optionally run `./build-release-artifacts --publish` to create the GitHub release for `v<version>`
+4. optionally run `./build-release-artifacts --publish` to create the GitHub release for `v<version>` from the existing artifacts
 
 This creates:
 - `mga-<version>-darwin-arm64.tar.gz`
 - `mga-<version>-linux-x86_64.tar.gz`
 - `SHA256SUMS`
+
+`--publish` is publish-only. It does not rebuild artifacts or update checksums, so run `./build-release-artifacts` first and review `releases/<version>/`.
 
 The Linux artifact is built as a static `x86_64-unknown-linux-musl` binary via Podman.
 

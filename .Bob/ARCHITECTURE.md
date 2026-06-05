@@ -149,4 +149,11 @@ For Linux release builds in the musl container, the script sets `CAMGI_SKIP_FRON
 5. Builds Linux x86_64 static musl binary via `podman` unless skipped.
 6. Packages each platform with `mga`, `analyze-mg`, and `README.txt`.
 7. Writes `SHA256SUMS`.
-8. Optionally publishes with `gh release create`.
+
+`build-release-artifacts --publish` is intentionally publish-only:
+
+1. Reads the current `Cargo.toml` version, or uses `--version <version>` as a selector.
+2. Verifies `releases/<version>/` contains tarballs and `SHA256SUMS`.
+3. Creates the GitHub release with `gh release create`.
+
+It must not rebuild frontend/Rust artifacts. The normal workflow is build first, review artifacts, then publish.
