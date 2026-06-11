@@ -1,4 +1,4 @@
-mga 1.0.1
+mga 1.0.2
 
 Bundle contents:
   - mga

@@ -113,6 +113,8 @@ pub struct MustGather {
     pub collection_timestamp: Option<String>,
     pub version: String,
     pub platformtype: String,
+    pub cluster_name: Option<String>,
+    pub cluster_id: Option<String>,
     pub clusteroperators: Vec<ClusterOperator>,
     pub operators: Vec<GenericResource>,
     pub clusterroles: Vec<ClusterRole>,
@@ -190,6 +192,8 @@ impl MustGather {
             .or_else(|| format_path_modified_timestamp(&path));
         let version = get_cluster_version(&path);
         let platformtype = get_cluster_platform_type(&path);
+        let cluster_name = get_cluster_name(&path);
+        let cluster_id = get_cluster_id(&path);
 
         let manifestpath =
             build_manifest_path(&path, "", "", "clusteroperators", "config.openshift.io");
@@ -390,6 +394,8 @@ impl MustGather {
             collection_timestamp,
             version,
             platformtype,
+            cluster_name,
+            cluster_id,
             clusteroperators,
             operators,
             clusterroles,
@@ -665,6 +671,44 @@ fn get_cluster_platform_type(path: &Path) -> String {
         Some(v) => String::from(v),
         None => String::from("Unknown"),
     }
+}
+
+/// Get the cluster name.
+/// Prefers the infrastructure name (e.g. "prod-ocp1-kpxcp"), falling back to
+/// the API server hostname. Returns None if neither can be determined.
+fn get_cluster_name(path: &Path) -> Option<String> {
+    let mut manifestpath =
+        build_manifest_path(path, "", "", "infrastructures", "config.openshift.io");
+    manifestpath.push("cluster.yaml");
+    let manifest = Manifest::from(manifestpath).ok()?;
+    let yaml = manifest.as_yaml();
+
+    if let Some(name) = yaml["status"]["infrastructureName"].as_str() {
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+
+    // Fall back to the API server hostname, e.g.
+    // "https://api.prod-ocp1.example.com:6443" -> "api.prod-ocp1.example.com"
+    yaml["status"]["apiServerURL"]
+        .as_str()
+        .and_then(|url| url.strip_prefix("https://").or(Some(url)))
+        .map(|host| host.split([':', '/']).next().unwrap_or(host).to_string())
+        .filter(|host| !host.is_empty())
+}
+
+/// Get the cluster ID (ClusterVersion spec.clusterID).
+/// Returns None if it cannot be determined.
+fn get_cluster_id(path: &Path) -> Option<String> {
+    let mut manifestpath =
+        build_manifest_path(path, "", "", "clusterversions", "config.openshift.io");
+    manifestpath.push("version.yaml");
+    let manifest = Manifest::from(manifestpath).ok()?;
+    manifest.as_yaml()["spec"]["clusterID"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .map(String::from)
 }
 
 /// Get the version string.
@@ -1114,6 +1158,36 @@ mod tests {
             )),
             "X.Y.Z-fake-test"
         )
+    }
+
+    #[test]
+    fn test_get_cluster_name() {
+        assert_eq!(
+            get_cluster_name(&PathBuf::from(
+                "testdata/must-gather-valid/sample-openshift-release"
+            )),
+            Some(String::from("fake-test-abc12"))
+        )
+    }
+
+    #[test]
+    fn test_get_cluster_name_missing_infrastructure() {
+        assert_eq!(get_cluster_name(&PathBuf::from("testdata/does-not-exist")), None)
+    }
+
+    #[test]
+    fn test_get_cluster_id() {
+        assert_eq!(
+            get_cluster_id(&PathBuf::from(
+                "testdata/must-gather-valid/sample-openshift-release"
+            )),
+            Some(String::from("00000000-1111-2222-3333-444444444444"))
+        )
+    }
+
+    #[test]
+    fn test_get_cluster_id_missing_clusterversion() {
+        assert_eq!(get_cluster_id(&PathBuf::from("testdata/does-not-exist")), None)
     }
 
     #[test]

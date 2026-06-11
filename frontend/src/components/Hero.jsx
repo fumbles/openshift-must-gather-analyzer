@@ -8,6 +8,8 @@ export function Hero({
   subtitle,
   version,
   platform,
+  clusterName,
+  clusterId,
   stats,
   theme = 'dark',
 }) {
@@ -17,7 +19,11 @@ export function Hero({
         <div className="mx-auto max-w-7xl px-6 py-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{title}</h1>
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{title}</h1>
+                {clusterName && <ClusterPill theme={theme}>{clusterName}</ClusterPill>}
+                {clusterId && <ClusterPill theme={theme} mono>{clusterId}</ClusterPill>}
+              </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">
                 <StatusBadge status={status}>{statusLabel || status}</StatusBadge>
                 <span className="text-xs font-medium uppercase tracking-[0.12em] text-slate-500">Cluster overview</span>
@@ -50,9 +56,13 @@ export function Hero({
       <div className="relative mx-auto max-w-7xl px-6 py-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
-              {title}
-            </h1>
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+              <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
+                {title}
+              </h1>
+              {clusterName && <ClusterPill theme={theme}>{clusterName}</ClusterPill>}
+              {clusterId && <ClusterPill theme={theme} mono>{clusterId}</ClusterPill>}
+            </div>
 
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-300">
               <StatusBadge status={status}>{statusLabel || status}</StatusBadge>
@@ -74,6 +84,23 @@ export function Hero({
         </div>
       </div>
     </section>
+  )
+}
+
+function ClusterPill({ children, theme = 'dark', mono = false }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-normal ${
+        mono ? 'font-mono' : ''
+      } ${
+        theme === 'light'
+          ? 'border-slate-200 bg-white text-slate-600'
+          : 'border-slate-700 bg-slate-800/60 text-slate-300'
+      }`}
+      title={typeof children === 'string' ? children : undefined}
+    >
+      {children}
+    </span>
   )
 }
 

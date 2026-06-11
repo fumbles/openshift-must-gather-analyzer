@@ -922,6 +922,19 @@ function App({ data }) {
   })
   const { section: routeSection, navigate } = useHashRouter()
   const activeSection = routeSection || 'dashboard'
+
+  const clusterName = data?.overview?.dashboard?.cluster_name
+  const clusterId = data?.overview?.dashboard?.cluster_id
+  const clusterTitle = ['OpenShift Cluster', clusterName, clusterId]
+    .filter(Boolean)
+    .join(' ')
+  useEffect(() => {
+    document.title =
+      clusterName || clusterId
+        ? `${clusterTitle} - Must-Gather Explorer`
+        : 'Must-Gather Explorer'
+  }, [clusterTitle, clusterName, clusterId])
+
   const workloadVisibleTabs = [
     'topology',
     'pods',
@@ -1284,7 +1297,9 @@ function App({ data }) {
       <Hero
         status="unknown"
         statusLabel={formatCollectedTimestamp(data?.overview?.dashboard?.collection_timestamp) || 'Collected unknown'}
-        title={data?.overview?.dashboard?.cluster_name || 'OpenShift Cluster'}
+        title="OpenShift Cluster"
+        clusterName={clusterName}
+        clusterId={clusterId}
         version={data?.overview?.dashboard?.cluster_version || 'Unknown'}
         platform={data?.overview?.dashboard?.platform_type || 'OpenShift'}
         stats={heroStats}

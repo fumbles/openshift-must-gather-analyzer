@@ -101,6 +101,8 @@ pub struct DashboardData {
     pub degraded_operators: usize,
     pub cluster_version: Option<String>,
     pub platform_type: Option<String>,
+    pub cluster_name: Option<String>,
+    pub cluster_id: Option<String>,
     pub collection_timestamp: Option<String>,
 }
 
@@ -816,6 +818,8 @@ impl TriageMustGatherData {
             } else {
                 None
             },
+            cluster_name: mg.cluster_name.clone(),
+            cluster_id: mg.cluster_id.clone(),
             collection_timestamp: mg.collection_timestamp.clone(),
         };
 
@@ -1357,6 +1361,32 @@ impl TriageMustGatherData {
     }
 }
 
+/// Build the page title, e.g.
+/// "OpenShift Cluster sno-8rrtv 63db29b6-... - Must-Gather Explorer".
+fn page_title(mg: &MustGather) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if let Some(name) = mg.cluster_name.as_deref() {
+        parts.push(name);
+    }
+    if let Some(id) = mg.cluster_id.as_deref() {
+        parts.push(id);
+    }
+    if parts.is_empty() {
+        return String::from("Must-Gather Explorer");
+    }
+    format!(
+        "OpenShift Cluster {} - Must-Gather Explorer",
+        html_escape(&parts.join(" "))
+    )
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
 /// Generate the HTML page with embedded React app and triage-based data
 pub fn generate_html(mg: &MustGather) -> Result<String> {
     let data = TriageMustGatherData::from_must_gather(mg);
@@ -1368,7 +1398,7 @@ pub fn generate_html(mg: &MustGather) -> Result<String> {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Must-Gather Explorer</title>
+    <title>{}</title>
     <style>{}</style>
 </head>
 <body>
@@ -1377,13 +1407,16 @@ pub fn generate_html(mg: &MustGather) -> Result<String> {
     <script type="module">{}</script>
 </body>
 </html>"#,
-        REACT_CSS, data_json, REACT_JS
+        page_title(mg),
+        REACT_CSS,
+        data_json,
+        REACT_JS
     );
 
     Ok(html)
 }
 
-fn site_index_html() -> String {
+fn site_index_html(mg: &MustGather) -> String {
     let asset_version = REACT_JS.len().wrapping_add(REACT_CSS.len()).to_string();
 
     format!(
@@ -1392,7 +1425,7 @@ fn site_index_html() -> String {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Must-Gather Explorer</title>
+    <title>{}</title>
     <link rel="stylesheet" href="assets/index.css?v={}">
 </head>
 <body>
@@ -1401,7 +1434,9 @@ fn site_index_html() -> String {
     <script src="assets/index.js?v={}"></script>
 </body>
 </html>"#,
-        asset_version, asset_version
+        page_title(mg),
+        asset_version,
+        asset_version
     )
 }
 
@@ -1713,7 +1748,7 @@ pub fn generate_site(output_dir: &Path, mg: &MustGather) -> Result<()> {
     fs::create_dir_all(&assets_dir)?;
     fs::create_dir_all(&data_dir)?;
 
-    fs::write(output_dir.join("index.html"), site_index_html())?;
+    fs::write(output_dir.join("index.html"), site_index_html(mg))?;
     fs::write(assets_dir.join("index.js"), REACT_JS)?;
     fs::write(assets_dir.join("index.css"), REACT_CSS)?;
     write_summary_script(&data_dir.join("summary.js"), &summary_data)?;
